@@ -1,0 +1,34 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+from sentence_transformers import SentenceTransformer, util
+import json
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all origins for dev only
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+with open("newsletters.json", "r") as f:
+    newsletters = json.load(f)
+
+class SearchRequest(BaseModel):
+    query: str
+
+@app.post("/search")
+async def search(data: SearchRequest):
+    query_emb = model.encode(data.query, convert_to_tensor=True)
+    contents = [n["content"] for n in newsletters]
+    emb_newsletters = model.encode(contents, convert_to_tensor=True)
+    scores = util.cos_sim(query_emb, emb_newsletters)[0]
+    sorted_indices = scores.argsort(descending=True)
+
+    results = [{**newsletters[i], "score": float(scores[i])} for i in sorted_indices]
+    return results
